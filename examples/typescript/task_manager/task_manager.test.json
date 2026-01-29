@@ -1,0 +1,18 @@
+{
+  "name": "task_manager_tests",
+  "description": "Tests for the task manager pipeline",
+  "data": [
+    {
+      "name": "basic_project_planning",
+      "query": "Plan a website redesign project",
+      "expected_tool_calls": ["create_task", "estimate_effort"],
+      "reference_answer": "website redesign"
+    },
+    {
+      "name": "task_listing",
+      "query": "Show me all current tasks and plan next steps",
+      "expected_tool_calls": ["list_tasks"],
+      "reference_answer": "tasks"
+    }
+  ]
+}

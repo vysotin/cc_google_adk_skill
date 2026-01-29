@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  agent:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_GENAI_USE_VERTEXAI=FALSE

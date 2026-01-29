@@ -1,0 +1,18 @@
+{
+  "name": "research_agent_tests",
+  "description": "Tests for the research assistant pipeline",
+  "data": [
+    {
+      "name": "basic_research_query",
+      "query": "Research the topic of machine learning",
+      "expected_tool_calls": ["search_articles", "get_topic_stats"],
+      "reference_answer": "machine learning"
+    },
+    {
+      "name": "research_with_stats",
+      "query": "Tell me about climate change research",
+      "expected_tool_calls": ["search_articles", "get_topic_stats"],
+      "reference_answer": "climate change"
+    }
+  ]
+}

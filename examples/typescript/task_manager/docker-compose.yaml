@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  agent:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - GOOGLE_GENAI_API_KEY=${GOOGLE_GENAI_API_KEY}
+      - NODE_ENV=production
