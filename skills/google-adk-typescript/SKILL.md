@@ -194,22 +194,18 @@ for await (const event of runner.runAsync({
 
 ## Testing & Evaluation
 
-Create `.test.json` files alongside your agent:
+ADK provides trajectory-based evaluation with a **task-first approach**:
 
-```json
-{
-  "name": "weather_tests",
-  "data": [{
-    "query": "What's the weather in NYC?",
-    "expected_tool_calls": ["get_weather"],
-    "reference_answer": "temperature"
-  }]
-}
-```
+1. **Identify tasks/intents** - Map every user intent the agent handles, with tools involved
+2. **Map trajectories** - For each task, define happy paths and failure trajectories (not found, not eligible, tool errors, ambiguous input)
+3. **Select evals** - Use all 7 built-in metrics as baseline, then construct custom rubrics per task category
+4. **Test in layers** - Unit tests (mocked tools/sub-agents) → integration tests (real LLM) → simulated scenario tests (multi-turn personas)
+
+**Built-in metrics:** `tool_trajectory_avg_score`, `response_match_score`, `final_response_match_v2`, `rubric_based_final_response_quality_v1`, `rubric_based_tool_use_quality_v1`, `hallucinations_v1`, `safety_v1`
 
 **Run:** `npx adk eval <agent_folder> <test_file.test.json>`
 
-See [references/testing.md](references/testing.md) for evaluation metrics and patterns.
+See [references/testing.md](references/testing.md) for task-first strategy, rubric construction, mocked unit tests, integration tests, and simulated scenario tests.
 
 ## Backend Integrations
 
