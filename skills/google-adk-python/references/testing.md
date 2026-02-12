@@ -15,16 +15,18 @@
 
 ## Overview
 
-ADK evaluation focuses on:
+ADK provides a trajectory-based evaluation framework that compares actual agent behavior against expected tool call sequences and reference responses. It focuses on three pillars:
 1. **Trajectory** - Did the agent call the right tools in the right order?
 2. **Final Response** - Is the output correct and useful?
 3. **Safety** - Is the response safe and grounded?
 
-Deterministic pass/fail is often unsuitable for LLM agents due to model variability.
+Deterministic pass/fail is often unsuitable for LLM agents due to model variability. ADK evaluators run the agent, capture its actual tool calls and responses, then score them against golden expected data using configurable metrics and thresholds.
+
+**Important architectural note:** ADK evaluation does **not** inject mock tool responses into the agent at runtime. The agent always calls its real tools during evaluation. ADK compares the resulting tool trajectories and responses against expected values. To mock actual tool behavior, use Python's `unittest.mock` at the tool/agent level (see [Unit Tests with Mocked Responses](#unit-tests-with-mocked-responses)).
 
 ## Test Strategy: Task-First Approach
 
-Before writing any tests, start by identifying the agent's **main tasks and intents** — the distinct categories of work the agent is designed to handle. For each task, map out the possible **happy paths** (successful outcomes) and **failure trajectories** (errors, edge cases, fallbacks).
+A recommended best practice is to start by identifying the agent's **main tasks and intents** — the distinct categories of work the agent is designed to handle. For each task, map out the possible **happy paths** (successful outcomes) and **failure trajectories** (errors, edge cases, fallbacks).
 
 ### Step 1: Identify Main Tasks / Intents
 
@@ -83,17 +85,24 @@ Combine tasks and trajectories into a coverage matrix:
 
 ### Built-in ADK Evaluation Metrics
 
-ADK provides 7 built-in metrics. Use **all of them** as a starting baseline, then select the subset relevant to each task category:
+ADK provides 9 built-in metrics (registered in `MetricEvaluatorRegistry`). Use them as a starting baseline, then select the subset relevant to each task category:
 
 | Metric | What It Measures | When to Use | Recommended For |
 |--------|-----------------|-------------|-----------------|
-| `tool_trajectory_avg_score` | Exact match of tool call sequence against expected | Every task with tools | All tool-using tasks |
-| `response_match_score` | ROUGE-1 text similarity to reference answer | When you have exact expected outputs | Factual lookups, structured responses |
+| `tool_trajectory_avg_score` | Tool call sequence matches expected (EXACT/IN_ORDER/ANY_ORDER) | Every task with tools | All tool-using tasks |
+| `response_match_score` | ROUGE-1 unigram overlap with reference answer | When you have exact expected outputs | Factual lookups, structured responses |
+| `response_evaluation_score` | General response quality score | Overall quality assessment | Broad quality checks |
 | `final_response_match_v2` | LLM-judged semantic equivalence to reference | When phrasing varies but meaning must match | Explanations, summaries, product descriptions |
 | `rubric_based_final_response_quality_v1` | LLM-judged quality against a custom rubric | Domain-specific quality requirements | **Every task category** (see below) |
 | `rubric_based_tool_use_quality_v1` | LLM-judged tool usage quality against a rubric | Complex tool selection decisions | Multi-tool tasks, ambiguous routing |
-| `hallucinations_v1` | Whether response is grounded in tool outputs | When factual accuracy is critical | Order lookups, product info, financial data |
+| `hallucinations_v1` | Whether response is grounded in tool outputs/context | When factual accuracy is critical | Order lookups, product info, financial data |
 | `safety_v1` | Whether response is safe and harmless | Always | All tasks (non-negotiable) |
+| `per_turn_user_simulator_quality_v1` | User simulator fidelity to persona/plan | Dynamic scenario evaluation | ConversationScenario-based tests |
+
+The `tool_trajectory_avg_score` metric supports three match types via `ToolTrajectoryCriterion`:
+- **EXACT** (default) - Tool call lists must be identical in length, order, names, and arguments
+- **IN_ORDER** - Expected calls must appear in order, but extra calls are permitted between them
+- **ANY_ORDER** - Expected calls must all appear, regardless of order
 
 ### Constructing Rubric-Based Evals Per Task Category
 
@@ -216,61 +225,212 @@ RUBRICS = {
 
 ## Test File Format
 
-Create `<agent_name>.test.json` alongside your agent:
+ADK supports two test file formats. The **modern `.evalset.json` format** is the canonical format backed by Pydantic models.
+
+### Modern Format (`.evalset.json`)
+
+The modern format uses `EvalSet` → `EvalCase` → `Invocation` → `IntermediateData` hierarchy (camelCase JSON):
 
 ```json
 {
-  "name": "weather_agent_tests",
-  "description": "Tests for weather agent functionality",
-  "data": [
+  "evalSetId": "research_agent_tests",
+  "name": "Research Agent Evaluation",
+  "description": "Tests for research assistant pipeline",
+  "evalCases": [
     {
-      "name": "basic_weather_query",
-      "query": "What's the weather in New York?",
-      "expected_tool_calls": ["get_weather"],
-      "expected_tool_args": {
-        "get_weather": {"city": "New York"}
+      "evalId": "basic_research_query",
+      "sessionInput": {
+        "appName": "research_agent",
+        "userId": "test_user",
+        "state": {}
       },
-      "reference_answer": "The weather in New York"
+      "conversation": [
+        {
+          "invocationId": "inv-1",
+          "userContent": {
+            "role": "user",
+            "parts": [{"text": "Research the topic of machine learning"}]
+          },
+          "finalResponse": {
+            "role": "model",
+            "parts": [{"text": "Here is a summary of machine learning research..."}]
+          },
+          "intermediateData": {
+            "toolUses": [
+              {"name": "search_articles", "args": {"topic": "machine learning"}},
+              {"name": "get_topic_stats", "args": {"topic": "machine learning"}}
+            ],
+            "toolResponses": [
+              {
+                "name": "search_articles",
+                "id": "call_1",
+                "response": {
+                  "topic": "machine learning",
+                  "articles": [{"title": "Advances in ML", "source": "Nature"}]
+                }
+              }
+            ],
+            "intermediateResponses": []
+          }
+        }
+      ]
     },
     {
-      "name": "multi_city_query",
-      "query": "Compare weather in NYC and LA",
-      "expected_tool_calls": ["get_weather", "get_weather"],
-      "reference_answer": "comparison of weather"
-    },
-    {
-      "name": "no_tool_needed",
-      "query": "What tools can you use?",
-      "expected_tool_calls": [],
-      "reference_answer": "I can check weather"
+      "evalId": "no_tool_needed",
+      "conversation": [
+        {
+          "invocationId": "inv-2",
+          "userContent": {
+            "role": "user",
+            "parts": [{"text": "What tools can you use?"}]
+          },
+          "finalResponse": {
+            "role": "model",
+            "parts": [{"text": "I can search articles and get topic statistics."}]
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": []
+          }
+        }
+      ]
     }
   ]
 }
 ```
 
-**Fields:**
-- `name` - Test case identifier
-- `query` - User input to test
-- `expected_tool_calls` - List of tool names in expected order
-- `expected_tool_args` - Optional: expected arguments per tool
-- `reference_answer` - Expected content (partial match)
+**Key types (from `google.adk.evaluation`):**
+
+| Type | Purpose |
+|------|---------|
+| `EvalSet` | Top-level container with `eval_set_id`, `eval_cases` |
+| `EvalCase` | Single test case with `conversation` (static) or `conversation_scenario` (dynamic) — mutually exclusive |
+| `Invocation` | One conversation turn: `user_content`, `final_response`, `intermediate_data`, optional `rubrics` |
+| `IntermediateData` | Expected tool trajectory: `tool_uses` (list of `FunctionCall`), `tool_responses` (list of `FunctionResponse`) |
+| `SessionInput` | Initial session: `app_name`, `user_id`, `state` dict |
+| `Rubric` | Quality rubric: `rubric_id`, `rubric_content` (with `text_property`), optional `type` |
+
+**Note on `toolResponses`:** These store the **expected** tool return values as reference data for evaluation metrics (e.g., `hallucinations_v1` can check if the agent's final response is grounded in what the tools returned). They are **not** injected into the agent — the agent calls its real tools during evaluation.
+
+### Legacy Format (`.test.json`)
+
+The simpler legacy format is still supported and auto-converted internally:
+
+```json
+[
+  {
+    "name": "basic_research_query",
+    "data": [
+      {
+        "query": "Research the topic of machine learning",
+        "expected_tool_use": [
+          {"tool_name": "search_articles", "tool_input": {"topic": "machine learning"}},
+          {"tool_name": "get_topic_stats", "tool_input": {"topic": "machine learning"}}
+        ],
+        "reference": "machine learning research summary"
+      }
+    ]
+  }
+]
+```
+
+Migrate legacy files with: `AgentEvaluator.migrate_eval_data_to_new_schema("old.test.json")`
+
+### Eval Configuration (`test_config.json`)
+
+Configure metrics, thresholds, match types, and judge models:
+
+```json
+{
+  "criteria": {
+    "tool_trajectory_avg_score": {
+      "threshold": 0.9,
+      "match_type": "IN_ORDER"
+    },
+    "response_match_score": 0.8,
+    "rubric_based_final_response_quality_v1": {
+      "threshold": 0.8,
+      "judge_model_options": {
+        "judge_model": "gemini-2.5-flash",
+        "num_samples": 5
+      }
+    },
+    "hallucinations_v1": {
+      "threshold": 0.9,
+      "evaluate_intermediate_nl_responses": true
+    },
+    "safety_v1": 1.0
+  }
+}
+```
 
 ## Running Evaluations
 
 ### CLI
 
 ```bash
-# Run all tests for an agent
-adk eval my_agent
+# Run eval set against agent
+adk eval my_agent my_agent/tests.evalset.json
 
-# Run specific test file
-adk eval my_agent --test-file weather.test.json
+# With config file for custom thresholds/metrics
+adk eval my_agent my_agent/tests.evalset.json --config_file_path test_config.json
 
-# Verbose output
-adk eval my_agent --verbose
+# Print detailed per-invocation results
+adk eval my_agent my_agent/tests.evalset.json --print_detailed_results
+```
 
-# Output results to file
-adk eval my_agent --output results.json
+### Programmatic API (`AgentEvaluator`)
+
+```python
+import asyncio
+from google.adk.evaluation import AgentEvaluator
+
+# Evaluate from file (raises AssertionError if any metric fails threshold)
+asyncio.run(AgentEvaluator.evaluate(
+    agent_module="my_agent",
+    eval_dataset_file_path_or_dir="my_agent/tests.evalset.json",
+    config_file_path="test_config.json",  # optional
+    num_runs=2,
+    print_detailed_results=True,
+))
+
+# Evaluate from EvalSet object (for programmatic test construction)
+from google.adk.evaluation import EvalSet, EvalCase, Invocation, IntermediateData
+from google.genai import types as genai_types
+
+eval_set = EvalSet(
+    eval_set_id="programmatic_tests",
+    eval_cases=[
+        EvalCase(
+            eval_id="test_1",
+            conversation=[
+                Invocation(
+                    user_content=genai_types.Content(
+                        parts=[genai_types.Part(text="Research machine learning")]
+                    ),
+                    final_response=genai_types.Content(
+                        parts=[genai_types.Part(text="Here is a summary...")]
+                    ),
+                    intermediate_data=IntermediateData(
+                        tool_uses=[
+                            genai_types.FunctionCall(
+                                name="search_articles",
+                                args={"topic": "machine learning"},
+                            ),
+                        ]
+                    ),
+                )
+            ],
+        )
+    ],
+)
+
+asyncio.run(AgentEvaluator.evaluate_eval_set(
+    agent_module="my_agent",
+    eval_set=eval_set,
+    criteria={"tool_trajectory_avg_score": 1.0, "response_match_score": 0.8},
+    num_runs=2,
+))
 ```
 
 ### Dev UI
@@ -284,21 +444,115 @@ adk web
 
 ## Unit Tests with Mocked Responses
 
-Unit tests verify individual agent logic **without calling the LLM or real external services**. Mock tool return values and sub-agent responses to test deterministically.
+Unit tests verify individual agent logic **without calling the LLM or real external services**. There are two complementary approaches:
 
-### Mocking Tool Responses
+1. **ADK eval files with golden trajectories** — Define expected tool call sequences in `.evalset.json` files. ADK runs the agent with its real tools and compares actual vs. expected trajectories.
+2. **Python mocking with `unittest.mock`** — Replace tool functions with controlled return values to test tool logic, callbacks, and state flow deterministically without any LLM calls.
 
-Use `unittest.mock.patch` to replace tool functions with controlled return values:
+Use both together: ADK eval files for trajectory validation, Python mocks for isolated component testing.
+
+### Approach 1: ADK Eval Files with Expected Tool Trajectories
+
+Define expected tool calls and responses in `.evalset.json`. The `intermediateData.toolUses` field specifies the golden trajectory the agent should follow:
+
+```json
+{
+  "evalSetId": "research_agent_unit",
+  "evalCases": [
+    {
+      "evalId": "happy_path_basic_research",
+      "conversation": [
+        {
+          "invocationId": "inv-1",
+          "userContent": {"role": "user", "parts": [{"text": "Research machine learning"}]},
+          "finalResponse": {"role": "model", "parts": [{"text": "Here is a summary of ML research..."}]},
+          "intermediateData": {
+            "toolUses": [
+              {"name": "search_articles", "args": {"topic": "machine learning"}},
+              {"name": "get_topic_stats", "args": {"topic": "machine learning"}}
+            ],
+            "toolResponses": [
+              {
+                "name": "search_articles", "id": "call_1",
+                "response": {"topic": "machine learning", "articles": [{"title": "ML Advances"}]}
+              },
+              {
+                "name": "get_topic_stats", "id": "call_2",
+                "response": {"topic": "machine learning", "total_publications": 15000}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "evalId": "failure_no_tool_for_greeting",
+      "conversation": [
+        {
+          "invocationId": "inv-2",
+          "userContent": {"role": "user", "parts": [{"text": "Hello, how are you?"}]},
+          "finalResponse": {"role": "model", "parts": [{"text": "Hello! How can I help?"}]},
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": []
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Run with strict trajectory matching:
+
+```json
+// test_config.json
+{
+  "criteria": {
+    "tool_trajectory_avg_score": {"threshold": 1.0, "match_type": "EXACT"},
+    "response_match_score": 0.7
+  }
+}
+```
+
+```bash
+adk eval research_agent research_agent/tests.evalset.json --config_file_path test_config.json
+```
+
+Or run in pytest:
 
 ```python
-# test_unit_customer_agent.py
+import pytest
+from google.adk.evaluation import AgentEvaluator
+
+@pytest.mark.asyncio
+async def test_research_trajectories():
+    """ADK evaluates the real agent against golden tool trajectories."""
+    await AgentEvaluator.evaluate(
+        agent_module="research_agent",
+        eval_dataset_file_path_or_dir="research_agent/tests.evalset.json",
+        config_file_path="test_config.json",
+        num_runs=2,
+    )
+    # Raises AssertionError if any metric falls below threshold
+```
+
+### Approach 2: Python Mocking for Tool Logic
+
+Use `unittest.mock.patch` to replace tool functions with controlled return values. This tests tool contracts, error handling, and return shapes without any LLM or external API calls.
+
+**Important:** Patch the name **where it is used**, not where it is defined. If your test file does `from my_agent.tools import lookup_order`, the name `lookup_order` lives in your test module's namespace, so you must patch `"test_module.lookup_order"`:
+
+```python
+# test_unit_tools.py
 import pytest
 from unittest.mock import patch, MagicMock
+from my_agent.tools import lookup_order, check_refund_eligibility, process_refund
 
 class TestOrderLookupUnit:
     """Unit tests for order lookup task - mocked tool responses."""
 
-    @patch("my_agent.tools.lookup_order")
+    @patch("test_unit_tools.lookup_order")
     def test_happy_path_order_found(self, mock_lookup):
         """Happy path: tool returns a valid order."""
         mock_lookup.return_value = {
@@ -306,11 +560,8 @@ class TestOrderLookupUnit:
             "status": "shipped",
             "items": [{"name": "Widget", "qty": 2, "price": 19.99}],
             "tracking": "1Z999AA10123456784",
-            "estimated_delivery": "2025-03-15",
         }
 
-        # Import and call tool directly to verify return shape
-        from my_agent.tools import lookup_order
         result = lookup_order("ORD-12345")
 
         assert result["order_id"] == "ORD-12345"
@@ -318,7 +569,7 @@ class TestOrderLookupUnit:
         assert "tracking" in result
         mock_lookup.assert_called_once_with("ORD-12345")
 
-    @patch("my_agent.tools.lookup_order")
+    @patch("test_unit_tools.lookup_order")
     def test_failure_order_not_found(self, mock_lookup):
         """Failure trajectory: order does not exist."""
         mock_lookup.return_value = {
@@ -326,28 +577,26 @@ class TestOrderLookupUnit:
             "message": "No order found with ID ORD-99999",
         }
 
-        from my_agent.tools import lookup_order
         result = lookup_order("ORD-99999")
 
         assert result["error"] == "not_found"
         assert "ORD-99999" in result["message"]
 
-    @patch("my_agent.tools.lookup_order")
+    @patch("test_unit_tools.lookup_order")
     def test_failure_tool_api_error(self, mock_lookup):
         """Failure trajectory: external API raises an exception."""
         mock_lookup.side_effect = ConnectionError("Service unavailable")
 
-        from my_agent.tools import lookup_order
         with pytest.raises(ConnectionError):
             lookup_order("ORD-12345")
 
 
 class TestRefundRequestUnit:
-    """Unit tests for refund request task - mocked tool responses."""
+    """Unit tests for refund request task - mocked tool chain."""
 
-    @patch("my_agent.tools.process_refund")
-    @patch("my_agent.tools.check_refund_eligibility")
-    @patch("my_agent.tools.lookup_order")
+    @patch("test_unit_tools.process_refund")
+    @patch("test_unit_tools.check_refund_eligibility")
+    @patch("test_unit_tools.lookup_order")
     def test_happy_path_full_refund(self, mock_lookup, mock_eligibility, mock_refund):
         """Happy path: eligible order gets refunded."""
         mock_lookup.return_value = {
@@ -364,40 +613,61 @@ class TestRefundRequestUnit:
             "refund_id": "REF-500",
             "amount": 49.99,
             "status": "processed",
-            "estimated_days": 5,
         }
-
-        from my_agent.tools import lookup_order, check_refund_eligibility, process_refund
 
         order = lookup_order("ORD-100")
-        assert order["order_id"] == "ORD-100"
-
         eligibility = check_refund_eligibility(order["order_id"])
-        assert eligibility["eligible"] is True
-
         refund = process_refund(order["order_id"], eligibility["refund_amount"])
-        assert refund["status"] == "processed"
-        assert refund["amount"] == 49.99
 
-    @patch("my_agent.tools.check_refund_eligibility")
-    @patch("my_agent.tools.lookup_order")
+        assert eligibility["eligible"] is True
+        assert refund["status"] == "processed"
+
+    @patch("test_unit_tools.check_refund_eligibility")
+    @patch("test_unit_tools.lookup_order")
     def test_failure_not_eligible(self, mock_lookup, mock_eligibility):
         """Failure trajectory: order is outside return window."""
-        mock_lookup.return_value = {
-            "order_id": "ORD-200",
-            "status": "delivered",
-        }
+        mock_lookup.return_value = {"order_id": "ORD-200", "status": "delivered"}
         mock_eligibility.return_value = {
             "eligible": False,
             "reason": "Order delivered more than 30 days ago",
         }
 
-        from my_agent.tools import lookup_order, check_refund_eligibility
-
         order = lookup_order("ORD-200")
         eligibility = check_refund_eligibility(order["order_id"])
         assert eligibility["eligible"] is False
-        assert "30 days" in eligibility["reason"]
+```
+
+### Combining Both: Parametrized Tests from Eval Data
+
+Load test cases from your `.evalset.json` and use them to drive parametrized Python tests:
+
+```python
+import json
+import pytest
+
+def load_eval_cases(path):
+    with open(path) as f:
+        data = json.load(f)
+    return data.get("evalCases", [])
+
+EVAL_CASES = load_eval_cases("research_agent/tests.evalset.json")
+
+@pytest.mark.parametrize(
+    "case",
+    EVAL_CASES,
+    ids=[c["evalId"] for c in EVAL_CASES],
+)
+def test_expected_tool_names(case):
+    """Verify each eval case has valid tool names matching the agent's tools."""
+    from research_agent.tools import search_articles, get_topic_stats, format_citation
+    known_tools = {"search_articles", "get_topic_stats", "format_citation"}
+
+    for invocation in case.get("conversation", []):
+        intermediate = invocation.get("intermediateData", {})
+        for tool_use in intermediate.get("toolUses", []):
+            assert tool_use["name"] in known_tools, (
+                f"Unknown tool '{tool_use['name']}' in eval case '{case['evalId']}'"
+            )
 ```
 
 ### Mocking Sub-Agent Responses
@@ -945,7 +1215,7 @@ class EfficiencyEvaluator(Evaluator):
 
 1. **Start with task/intent identification** - Map all tasks before writing a single test
 2. **Map happy and failure trajectories** - Every task has at least one happy path and 2-3 failure modes
-3. **Use all 7 built-in metrics as baseline** - Then select the relevant subset per task category
+3. **Use all 9 built-in metrics as baseline** - Then select the relevant subset per task category
 4. **Construct rubrics per task** - Present rubrics to the user for review before committing
 5. **Test in layers** - Unit tests (mocked) first, then integration, then scenario
 6. **Test tool sequences, not just outputs** - Verify the agent reasons correctly

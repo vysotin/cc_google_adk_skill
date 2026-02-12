@@ -14,16 +14,18 @@
 
 ## Overview
 
-ADK evaluation focuses on:
+ADK provides a trajectory-based evaluation framework that compares actual agent behavior against expected tool call sequences and reference responses. It focuses on three pillars:
 1. **Trajectory** - Did the agent call the right tools in the right order?
 2. **Final Response** - Is the output correct and useful?
 3. **Safety** - Is the response safe and grounded?
 
-Traditional pass/fail tests are insufficient for LLM agents due to non-deterministic behavior. ADK uses qualitative evaluation of both outputs and execution trajectories.
+Traditional pass/fail tests are insufficient for LLM agents due to non-deterministic behavior. ADK evaluators run the agent, capture its actual tool calls and responses, then score them against golden expected data using configurable metrics and thresholds.
+
+**Important architectural note:** ADK evaluation does **not** inject mock tool responses into the agent at runtime. The agent always calls its real tools during evaluation. ADK compares the resulting tool trajectories and responses against expected values. To mock actual tool behavior, use Vitest's `vi.fn()` at the tool level (see [Unit Tests with Mocked Responses](#unit-tests-with-mocked-responses)).
 
 ## Test Strategy: Task-First Approach
 
-Before writing any tests, start by identifying the agent's **main tasks and intents** — the distinct categories of work the agent is designed to handle. For each task, map out the possible **happy paths** (successful outcomes) and **failure trajectories** (errors, edge cases, fallbacks).
+A recommended best practice is to start by identifying the agent's **main tasks and intents** — the distinct categories of work the agent is designed to handle. For each task, map out the possible **happy paths** (successful outcomes) and **failure trajectories** (errors, edge cases, fallbacks).
 
 ### Step 1: Identify Main Tasks / Intents
 
@@ -82,17 +84,24 @@ Combine tasks and trajectories into a coverage matrix:
 
 ### Built-in ADK Evaluation Metrics
 
-ADK provides 7 built-in metrics. Use **all of them** as a starting baseline, then select the subset relevant to each task category:
+ADK provides 9 built-in metrics (registered in `MetricEvaluatorRegistry`). Use them as a starting baseline, then select the subset relevant to each task category:
 
 | Metric | What It Measures | When to Use | Recommended For |
 |--------|-----------------|-------------|-----------------|
-| `tool_trajectory_avg_score` | Exact match of tool call sequence against expected | Every task with tools | All tool-using tasks |
-| `response_match_score` | ROUGE-1 text similarity to reference answer | When you have exact expected outputs | Factual lookups, structured responses |
+| `tool_trajectory_avg_score` | Tool call sequence matches expected (EXACT/IN_ORDER/ANY_ORDER) | Every task with tools | All tool-using tasks |
+| `response_match_score` | ROUGE-1 unigram overlap with reference answer | When you have exact expected outputs | Factual lookups, structured responses |
+| `response_evaluation_score` | General response quality score | Overall quality assessment | Broad quality checks |
 | `final_response_match_v2` | LLM-judged semantic equivalence to reference | When phrasing varies but meaning must match | Explanations, summaries, product descriptions |
 | `rubric_based_final_response_quality_v1` | LLM-judged quality against a custom rubric | Domain-specific quality requirements | **Every task category** (see below) |
 | `rubric_based_tool_use_quality_v1` | LLM-judged tool usage quality against a rubric | Complex tool selection decisions | Multi-tool tasks, ambiguous routing |
-| `hallucinations_v1` | Whether response is grounded in tool outputs | When factual accuracy is critical | Order lookups, product info, financial data |
+| `hallucinations_v1` | Whether response is grounded in tool outputs/context | When factual accuracy is critical | Order lookups, product info, financial data |
 | `safety_v1` | Whether response is safe and harmless | Always | All tasks (non-negotiable) |
+| `per_turn_user_simulator_quality_v1` | User simulator fidelity to persona/plan | Dynamic scenario evaluation | ConversationScenario-based tests |
+
+The `tool_trajectory_avg_score` metric supports three match types:
+- **EXACT** (default) - Tool call lists must be identical in length, order, names, and arguments
+- **IN_ORDER** - Expected calls must appear in order, but extra calls are permitted between them
+- **ANY_ORDER** - Expected calls must all appear, regardless of order
 
 ### Constructing Rubric-Based Evals Per Task Category
 
@@ -1181,7 +1190,7 @@ jobs:
 
 1. **Start with task/intent identification** - Map all tasks before writing a single test
 2. **Map happy and failure trajectories** - Every task has at least one happy path and 2-3 failure modes
-3. **Use all 7 built-in metrics as baseline** - Then select the relevant subset per task category
+3. **Use all 9 built-in metrics as baseline** - Then select the relevant subset per task category
 4. **Construct rubrics per task** - Present rubrics to the user for review before committing
 5. **Test in layers** - Unit tests (mocked) first, then integration, then scenario
 6. **Test tool sequences, not just outputs** - Verify the agent reasons correctly
