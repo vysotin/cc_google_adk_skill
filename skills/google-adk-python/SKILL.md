@@ -151,24 +151,18 @@ Return `None` to proceed normally, return a response object to override and skip
 
 ## Testing & Evaluation
 
-ADK provides trajectory-based evaluation:
+ADK provides trajectory-based evaluation comparing actual agent behavior against expected tool call sequences and reference responses. A recommended best practice is to follow a **task-first approach**:
 
-```json
-{
-  "name": "weather_test",
-  "data": [{
-    "query": "What's the weather in NYC?",
-    "expected_tool_calls": ["get_weather"],
-    "reference_answer": "contains temperature"
-  }]
-}
-```
+1. **Identify tasks/intents** - Map every user intent the agent handles, with tools involved
+2. **Map trajectories** - For each task, define happy paths and failure trajectories (not found, not eligible, tool errors, ambiguous input)
+3. **Select evals** - Use all 9 built-in metrics as baseline, then construct custom rubrics per task category
+4. **Test in layers** - Unit tests (mocked tools/sub-agents) → integration tests (real LLM) → simulated scenario tests (multi-turn personas)
+
+**Built-in metrics:** `tool_trajectory_avg_score`, `response_match_score`, `final_response_match_v2`, `rubric_based_final_response_quality_v1`, `rubric_based_tool_use_quality_v1`, `hallucinations_v1`, `safety_v1`
 
 **Run:** `adk eval my_agent` or integrate with pytest.
 
-**Metrics:** `tool_trajectory_avg_score`, `response_match_score`, `hallucinations_v1`, `safety_v1`
-
-See [references/testing.md](references/testing.md) for evaluation patterns and pytest integration.
+See [references/testing.md](references/testing.md) for task-first strategy, rubric construction, mocked unit tests, integration tests, and simulated scenario tests.
 
 ## Python Backend Integrations
 

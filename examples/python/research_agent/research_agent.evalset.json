@@ -1,0 +1,179 @@
+{
+  "evalSetId": "research_agent_tests",
+  "name": "Research Agent Evaluation",
+  "description": "Comprehensive tests for the research assistant pipeline covering happy paths and failure trajectories",
+  "evalCases": [
+    {
+      "evalId": "happy_path_basic_research",
+      "sessionInput": {
+        "appName": "research_agent",
+        "userId": "test_user",
+        "state": {}
+      },
+      "conversation": [
+        {
+          "invocationId": "inv-basic-1",
+          "userContent": {
+            "role": "user",
+            "parts": [{"text": "Research the topic of machine learning"}]
+          },
+          "finalResponse": {
+            "role": "model",
+            "parts": [{"text": "Here is a comprehensive summary of machine learning research, covering recent advances, key publications, and growth trends."}]
+          },
+          "intermediateData": {
+            "toolUses": [
+              {"name": "search_articles", "args": {"topic": "machine learning"}},
+              {"name": "get_topic_stats", "args": {"topic": "machine learning"}}
+            ],
+            "toolResponses": [
+              {
+                "name": "search_articles",
+                "id": "call_1",
+                "response": {
+                  "topic": "machine learning",
+                  "articles": [
+                    {"title": "Advances in machine learning: A 2024 Review", "summary": "Reviews recent developments", "source": "Journal of AI Research", "year": 2024}
+                  ],
+                  "total_found": 3
+                }
+              },
+              {
+                "name": "get_topic_stats",
+                "id": "call_2",
+                "response": {
+                  "topic": "machine learning",
+                  "total_publications": 25000,
+                  "growth_rate_percent": 18.5,
+                  "top_venues": ["Nature", "Science", "IEEE", "ACM"]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "evalId": "happy_path_climate_research",
+      "conversation": [
+        {
+          "invocationId": "inv-climate-1",
+          "userContent": {
+            "role": "user",
+            "parts": [{"text": "Tell me about climate change research"}]
+          },
+          "finalResponse": {
+            "role": "model",
+            "parts": [{"text": "Climate change research has seen significant growth, with key findings on temperature trends and mitigation strategies."}]
+          },
+          "intermediateData": {
+            "toolUses": [
+              {"name": "search_articles", "args": {"topic": "climate change"}},
+              {"name": "get_topic_stats", "args": {"topic": "climate change"}}
+            ],
+            "toolResponses": [
+              {
+                "name": "search_articles",
+                "id": "call_3",
+                "response": {
+                  "topic": "climate change",
+                  "articles": [
+                    {"title": "Understanding climate change: Challenges and Opportunities", "source": "Nature Reviews", "year": 2024}
+                  ],
+                  "total_found": 3
+                }
+              },
+              {
+                "name": "get_topic_stats",
+                "id": "call_4",
+                "response": {
+                  "topic": "climate change",
+                  "total_publications": 40000,
+                  "growth_rate_percent": 12.3
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "evalId": "happy_path_with_citation",
+      "conversation": [
+        {
+          "invocationId": "inv-cite-1",
+          "userContent": {
+            "role": "user",
+            "parts": [{"text": "Research quantum computing and cite your sources"}]
+          },
+          "finalResponse": {
+            "role": "model",
+            "parts": [{"text": "Quantum computing research shows rapid advancement. Sources: \"Advances in quantum computing.\" Journal of AI Research, 2024."}]
+          },
+          "intermediateData": {
+            "toolUses": [
+              {"name": "search_articles", "args": {"topic": "quantum computing"}},
+              {"name": "get_topic_stats", "args": {"topic": "quantum computing"}},
+              {"name": "format_citation", "args": {"title": "Advances in quantum computing: A 2024 Review", "source": "Journal of AI Research", "year": 2024}}
+            ],
+            "toolResponses": [
+              {
+                "name": "search_articles",
+                "id": "call_5",
+                "response": {
+                  "topic": "quantum computing",
+                  "articles": [{"title": "Advances in quantum computing: A 2024 Review", "source": "Journal of AI Research", "year": 2024}]
+                }
+              },
+              {
+                "name": "format_citation",
+                "id": "call_7",
+                "response": "\"Advances in quantum computing: A 2024 Review.\" Journal of AI Research, 2024."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "evalId": "no_tool_for_greeting",
+      "conversation": [
+        {
+          "invocationId": "inv-greet-1",
+          "userContent": {
+            "role": "user",
+            "parts": [{"text": "Hello, how are you?"}]
+          },
+          "finalResponse": {
+            "role": "model",
+            "parts": [{"text": "Hello! I'm a research assistant. I can help you find and summarize research on any topic."}]
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": []
+          }
+        }
+      ]
+    },
+    {
+      "evalId": "no_tool_for_capabilities_question",
+      "conversation": [
+        {
+          "invocationId": "inv-caps-1",
+          "userContent": {
+            "role": "user",
+            "parts": [{"text": "What tools can you use?"}]
+          },
+          "finalResponse": {
+            "role": "model",
+            "parts": [{"text": "I can search for research articles, get publication statistics for topics, and format citations."}]
+          },
+          "intermediateData": {
+            "toolUses": [],
+            "toolResponses": []
+          }
+        }
+      ]
+    }
+  ]
+}
