@@ -156,13 +156,13 @@ ADK provides trajectory-based evaluation comparing actual agent behavior against
 1. **Identify tasks/intents** - Map every user intent the agent handles, with tools involved
 2. **Map trajectories** - For each task, define happy paths and failure trajectories (not found, not eligible, tool errors, ambiguous input)
 3. **Select evals** - Use all 9 built-in metrics as baseline, then construct custom rubrics per task category
-4. **Test in layers** - Unit tests (mocked tools/sub-agents) → integration tests (real LLM) → simulated scenario tests (multi-turn personas)
+4. **Test in layers** - eval-file trajectory tests → integration eval sets (real LLM) → simulated scenario tests (multi-turn via `conversation_scenario`)
 
 **Built-in metrics:** `tool_trajectory_avg_score`, `response_match_score`, `final_response_match_v2`, `rubric_based_final_response_quality_v1`, `rubric_based_tool_use_quality_v1`, `hallucinations_v1`, `safety_v1`
 
 **Run:** `adk eval my_agent` or integrate with pytest.
 
-See [references/testing.md](references/testing.md) for task-first strategy, rubric construction, mocked unit tests, integration tests, and simulated scenario tests.
+See [references/testing.md](references/testing.md) for task-first strategy, rubric construction, eval trajectory tests, integration tests, and simulated scenario tests.
 
 ## Python Backend Integrations
 
